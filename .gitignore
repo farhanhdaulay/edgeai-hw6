@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+# PDM (only relevant if you do Step 0.4; harmless to include either way)
+.pdm-python
+.pdm-build/
+__pypackages__/
+# Build artifacts
+*.engine
+*.onnx
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+# Local secrets
+.env

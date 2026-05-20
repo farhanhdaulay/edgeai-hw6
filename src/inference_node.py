@@ -11,15 +11,42 @@ import os
 import signal
 import sys
 import time
-
+from typing import Any
+import numpy as np
 import cv2
-import paho.mqtt.client as mqtt
+from src.mqtt_publisher import MqttPublisher, PublisherConfig
 from paho.mqtt.enums import CallbackAPIVersion
-from ultralytics import YOLO
+
+
+def _default_model_factory(path: str, task: str) -> Any: # pragma: no cover
+    """Real YOLO loader. Imported lazily so unit tests don't pull torch.
+    Skipped from coverage because torch is Jetson-only and tests use the
+    injected mock factory; real exercise happens in tests/integration/."""
+    from ultralytics import YOLO  # noqa: PLC0415 (deliberate lazy import)
+    return YOLO(path, task=task)
 
 # --- Graceful shutdown + Docker health check heartbeat ---
 running = True
 
+def preprocess_frame(frame, target_size=(320, 320)):
+    """Convert a frame into a (1, 3, H, W) normalized float32 tensor."""
+    if len(frame.shape) == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+    resized = cv2.resize(frame, target_size)
+    tensor = np.transpose(resized, (2, 0, 1)).astype(np.float32) / 255.0
+    return np.expand_dims(tensor, axis=0)
+
+def apply_confidence_threshold(detections, conf_thresh):
+    """Filter out detections below the confidence threshold."""
+    return [d for d in detections if d.get("conf", 0.0) >= conf_thresh]
+
+def detections_to_payload(frame_id, ts, detections):
+    """Package detections into the standard MQTT JSON schema."""
+    return {
+        "frame": frame_id,
+        "ts": ts,
+        "detections": detections
+    }
 
 def signal_handler(sig, frame):
     """Handle SIGTERM/SIGINT for graceful shutdown."""
@@ -60,16 +87,23 @@ def main():
     parser.add_argument("--mqtt-topic", default="/sense/vision/detections")
     args = parser.parse_args()
 
-    # Load model. task='detect' is required for .engine files — they don't
-    # embed task metadata the way .pt files do, so Ultralytics can't infer it.
+    # Load model. 
     print(f"[inference] Loading model: {args.model}")
-    model = YOLO(args.model, task="detect")
+    # Use the factory function since YOLO isn't imported at the top level
+    # model = YOLO(args.model, task="detect") 
+    model = _default_model_factory(args.model, task="detect")
 
-    # Connect MQTT
-    client = mqtt.Client(CallbackAPIVersion.VERSION2)
-    print(f"[inference] Connecting to MQTT broker: {args.mqtt_broker}:{args.mqtt_port}")
-    client.connect(args.mqtt_broker, args.mqtt_port)
-    client.loop_start()
+    # NEW CODE: Set up the publisher configuration
+    mqtt_config = PublisherConfig(
+        # Use the arguments instead of hardcoding
+        host=args.mqtt_broker, 
+        port=args.mqtt_port,
+        client_id="hw6_inference_node"
+    )
+    
+    # Instantiate and connect
+    publisher = MqttPublisher(config=mqtt_config)
+    publisher.connect()
 
     # Open video
     cap = cv2.VideoCapture(args.source)
@@ -110,11 +144,13 @@ def main():
             "detections": detections,
             "count": len(detections),
         }
-        client.publish(args.mqtt_topic, json.dumps(payload), qos=0)
+        
+        # Use the requested topic instead of a hardcoded string
+        # publisher.publish("jetson/vision/detections", payload)
+        publisher.publish(args.mqtt_topic, payload)
         frame_count += 1
 
-        # Heartbeat for Docker HEALTHCHECK (every 10 frames ≈ 200 ms at 50 FPS).
-        # Harmless until Step 5 adds the HEALTHCHECK probe that reads this.
+        # Heartbeat for Docker HEALTHCHECK
         if frame_count % 10 == 0:
             write_health()
 
@@ -128,10 +164,11 @@ def main():
 
     # Cleanup
     cap.release()
-    client.loop_stop()
-    client.disconnect()
+    # The old 'client' is gone, tell the publisher to disconnect instead
+    # client.loop_stop()
+    # client.disconnect()
+    publisher.disconnect()
     print(f"[inference] Shutdown complete. Processed {frame_count} frames.")
-
 
 if __name__ == "__main__":
     main()

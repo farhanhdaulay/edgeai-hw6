@@ -31,6 +31,8 @@ quality = [
 test = {shell = "echo; echo 'pytest [test] -'; pytest"}
 lint = {shell = "echo; echo 'ruff check [lint] -'; ruff check ."}
 format = {shell = "echo; echo 'ruff format [format] -'; ruff format ."}
+check = {composite = ["format-check", "lint", "typecheck", "security", "pylint"]}
+ci = {composite = ["check", "test-cov"]}
 
 [tool.pdm.scripts.test-cov]
 shell = """
@@ -70,9 +72,6 @@ echo; echo 'pylint [pylint] -'; \
 pylint src/inference_node.py src/healthcheck.py src/mqtt_publisher.py \
 calibration/calibrate_int8.py --fail-under=7.0 \
 """
-
-check = {composite = ["format-check", "lint", "typecheck", "security", "pylint"]}
-ci = {composite = ["check", "test-cov"]}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

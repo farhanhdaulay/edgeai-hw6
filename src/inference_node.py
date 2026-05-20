@@ -10,15 +10,14 @@ results as JSON messages to an MQTT topic.
 
 import argparse
 import os
-import signal
-import sys
 import time
-from typing import Any
 
 import cv2
 import numpy as np
 
 from src.mqtt_publisher import MqttPublisher, PublisherConfig
+
+GRAYSCALE_DIM = 2
 
 def _default_model_factory(path: str, task: str) -> object:  # pragma: no cover
     """Real YOLO loader.
@@ -32,7 +31,7 @@ def _default_model_factory(path: str, task: str) -> object:  # pragma: no cover
 
 def preprocess_frame(frame: np.ndarray, target_size: tuple = (320, 320)) -> np.ndarray:
     """Convert a frame into a (1, 3, H, W) normalized float32 tensor."""
-    if len(frame.shape) == 2:
+    if len(frame.shape) == GRAYSCALE_DIM:
         frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
     resized = cv2.resize(frame, target_size)
     tensor = np.transpose(resized, (2, 0, 1)).astype(np.float32) / 255.0
@@ -53,7 +52,7 @@ def detections_to_payload(frame_id: int, ts: float, detections: list) -> dict:
 # --- Graceful shutdown + Docker health check heartbeat ---
 running = True
 
-def signal_handler(sig: int, frame: Any) -> None:
+def signal_handler(sig: int, frame: object) -> None:
     """Handle SIGTERM/SIGINT for graceful shutdown."""
     global running
     print(f"\n[inference] Received signal {sig}, shutting down...")
@@ -70,8 +69,8 @@ def write_health() -> None:
     except OSError:
         pass
 
-
 def main() -> None:
+    """Run the main inference loop."""
     parser = argparse.ArgumentParser(description="YOLO26 TensorRT inference node")
     parser.add_argument(
         "--model",

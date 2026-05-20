@@ -1,1 +1,1 @@
-"""Source package for edgeai-hw6.""" 
+"""Source package for edgeai-hw6."""

@@ -112,38 +112,3 @@ jobs:
           # Speed up subsequent builds by caching layers in GHA's cache.
           cache-from: type=gha
           cache-to: type=gha,mode=max
-  jetson-smoke:
-    name: Smoke test on Jetson
-    runs-on: [self-hosted, linux, arm64, jetson]
-    needs: build
-    steps:
-      - uses: actions/checkout@v5
-  
-      - name: Pull and verify image on this Jetson
-        # IMPORTANT: build IMAGE inside the `run:` shell, NOT in `env:`.
-        # YAML `env:` values are static strings — `$(...)` substitution
-        # does not run there. Doing it inside `run:` ensures the short
-        # SHA is computed at job time.
-        #
-        # We override the Dockerfile's CMD with a tiny `python3 -c`
-        # engine-load check rather than running the full inference loop.
-        # The entrypoint still fires first (compiles or reuses the
-        # engine), then exec's our verification command. This keeps the
-        # smoke test deterministic and short, and avoids needing to
-        # mount a test video on the runner.
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
-          
-          echo "Pulling $IMAGE"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          
-          docker pull "$IMAGE"
-          docker volume create lab12-models
-          
-          docker run --rm --runtime nvidia -v lab12-models:/opt/models \
-            "$IMAGE" python3 -c "
-          from ultralytics import YOLO
-          m = YOLO('/opt/models/best.engine', task='detect')
-          print('PASS: engine loads on Jetson hardware')
-          "

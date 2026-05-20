@@ -1,34 +1,36 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Kishore and Farhan
+# Tatung University 14210 AI實務專題
 """Inference node: runs YOLO26 TensorRT engine, publishes detections to MQTT.
+
 Reads frames from a video file (or camera), runs detection with
 the fine-tuned TensorRT engine from Lab 9, and publishes bounding-box
 results as JSON messages to an MQTT topic.
 """
 
 import argparse
-import json
 import os
 import signal
 import sys
 import time
 from typing import Any
-import numpy as np
+
 import cv2
+import numpy as np
+
 from src.mqtt_publisher import MqttPublisher, PublisherConfig
-from paho.mqtt.enums import CallbackAPIVersion
 
-
-def _default_model_factory(path: str, task: str) -> Any: # pragma: no cover
-    """Real YOLO loader. Imported lazily so unit tests don't pull torch.
+def _default_model_factory(path: str, task: str) -> object:  # pragma: no cover
+    """Real YOLO loader.
+    
+    Imported lazily so unit tests don't pull torch.
     Skipped from coverage because torch is Jetson-only and tests use the
-    injected mock factory; real exercise happens in tests/integration/."""
-    from ultralytics import YOLO  # noqa: PLC0415 (deliberate lazy import)
+    injected mock factory; real exercise happens in tests/integration/.
+    """
+    from ultralytics import YOLO
     return YOLO(path, task=task)
 
-# --- Graceful shutdown + Docker health check heartbeat ---
-running = True
-
-def preprocess_frame(frame, target_size=(320, 320)):
+def preprocess_frame(frame: np.ndarray, target_size: tuple = (320, 320)) -> np.ndarray:
     """Convert a frame into a (1, 3, H, W) normalized float32 tensor."""
     if len(frame.shape) == 2:
         frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
@@ -36,11 +38,11 @@ def preprocess_frame(frame, target_size=(320, 320)):
     tensor = np.transpose(resized, (2, 0, 1)).astype(np.float32) / 255.0
     return np.expand_dims(tensor, axis=0)
 
-def apply_confidence_threshold(detections, conf_thresh):
+def apply_confidence_threshold(detections: list, conf_thresh: float) -> list:
     """Filter out detections below the confidence threshold."""
     return [d for d in detections if d.get("conf", 0.0) >= conf_thresh]
 
-def detections_to_payload(frame_id, ts, detections):
+def detections_to_payload(frame_id: int, ts: float, detections: list) -> dict:
     """Package detections into the standard MQTT JSON schema."""
     return {
         "frame": frame_id,
@@ -48,21 +50,20 @@ def detections_to_payload(frame_id, ts, detections):
         "detections": detections
     }
 
-def signal_handler(sig, frame):
+# --- Graceful shutdown + Docker health check heartbeat ---
+running = True
+
+def signal_handler(sig: int, frame: Any) -> None:
     """Handle SIGTERM/SIGINT for graceful shutdown."""
     global running
     print(f"\n[inference] Received signal {sig}, shutting down...")
     running = False
 
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-
-def write_health():
-    """Timestamp heartbeat for Docker HEALTHCHECK (consumed by
-    healthcheck.py in Step 5). Silently no-ops if /tmp isn't
-    writable — harmless outside Docker."""
+def write_health() -> None:
+    """Timestamp heartbeat for Docker HEALTHCHECK.
+    
+    Silently no-ops if /tmp isn't writable.
+    """
     try:
         with open("/tmp/inference_health", "w") as f:
             f.write(str(time.time()))
@@ -70,7 +71,7 @@ def write_health():
         pass
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="YOLO26 TensorRT inference node")
     parser.add_argument(
         "--model",

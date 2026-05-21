@@ -51,7 +51,7 @@ def inference_container():
         "host",
         IMAGE,
         "python3",
-        "src/inference_node.py",
+        "/app/inference_node.py",
         "--source",
         "/app/sample_frame.jpg",
     ]

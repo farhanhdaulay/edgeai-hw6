@@ -16,7 +16,12 @@ import time
 import cv2
 import numpy as np
 
-from src.mqtt_publisher import MqttPublisher, PublisherConfig
+try:
+    # Works on your laptop for local testing
+    from src.mqtt_publisher import MqttPublisher, PublisherConfig
+except ModuleNotFoundError:
+    # Works inside the Docker container where files are flattened
+    from mqtt_publisher import MqttPublisher, PublisherConfig
 
 GRAYSCALE_DIM = 2
 

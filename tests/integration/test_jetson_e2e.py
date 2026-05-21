@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Kishore and Farhan
 # Tatung University 14210 AI實務專題
-"""tests/integration/test_jetson_e2e.py
+"""tests/integration/test_jetson_e2e.py.
 
 Integration test that runs on the Jetson hardware. Pulls the image, starts the container,
 and verifies that MQTT detections are published.

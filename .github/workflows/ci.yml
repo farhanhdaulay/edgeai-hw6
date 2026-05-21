@@ -75,7 +75,21 @@ jobs:
       - name: Bandit (Python SAST)
         run: bandit -r src/ -ll
       - name: pip-audit (CVE scan on deps)
-        run: pip-audit --strict -r requirements.txt
+        # Suppressing torch CVEs: Jetson requires NVIDIA's specific L4T PyTorch wheel for CUDA.
+        # We cannot arbitrarily upgrade torch via PyPI without breaking hardware acceleration.
+        run: |
+          pip-audit --strict -r requirements.txt \
+            --ignore-vuln PYSEC-2025-210 \
+            --ignore-vuln PYSEC-2025-194 \
+            --ignore-vuln PYSEC-2025-196 \
+            --ignore-vuln PYSEC-2025-195 \
+            --ignore-vuln PYSEC-2025-193 \
+            --ignore-vuln PYSEC-2025-192 \
+            --ignore-vuln PYSEC-2026-139 \
+            --ignore-vuln PYSEC-2025-191 \
+            --ignore-vuln PYSEC-2025-197 \
+            --ignore-vuln PYSEC-2025-189 \
+            --ignore-vuln PYSEC-2025-190
 
   build:
     name: Build & push ARM64 image

@@ -69,7 +69,7 @@ def write_health() -> None:
     Silently no-ops if /tmp isn't writable.
     """
     try:
-        with open("/tmp/inference_health", "w") as f:
+        with open("/app/inference_health", "w") as f:
             f.write(str(time.time()))
     except OSError:
         pass

@@ -10,11 +10,13 @@ and verifies that MQTT detections are published.
 # import json
 import os
 import subprocess
+
 # import time
 from pathlib import Path
 
 # import paho.mqtt.client as mqtt
 import pytest
+
 # from paho.mqtt.enums import CallbackAPIVersion
 
 IMAGE = os.environ.get("IMAGE")

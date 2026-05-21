@@ -11,7 +11,7 @@ results as JSON messages to an MQTT topic.
 import argparse
 import os
 import time
-
+import sys
 import cv2
 import numpy as np
 

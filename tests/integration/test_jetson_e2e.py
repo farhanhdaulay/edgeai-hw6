@@ -7,15 +7,15 @@ Integration test that runs on the Jetson hardware. Pulls the image, starts the c
 and verifies that MQTT detections are published.
 """
 
-import json
+# import json
 import os
 import subprocess
-import time
+# import time
 from pathlib import Path
 
-import paho.mqtt.client as mqtt
+# import paho.mqtt.client as mqtt
 import pytest
-from paho.mqtt.enums import CallbackAPIVersion
+# from paho.mqtt.enums import CallbackAPIVersion
 
 IMAGE = os.environ.get("IMAGE")
 

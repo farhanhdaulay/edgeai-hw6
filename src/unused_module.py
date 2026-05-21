@@ -1,3 +1,4 @@
+# ruff: noqa
 """Demo."""
 def f01(): return 1
 def f02(): return 2

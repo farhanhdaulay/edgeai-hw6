@@ -10,8 +10,9 @@ results as JSON messages to an MQTT topic.
 
 import argparse
 import os
-import time
 import sys
+import time
+
 import cv2
 import numpy as np
 
@@ -19,15 +20,18 @@ from src.mqtt_publisher import MqttPublisher, PublisherConfig
 
 GRAYSCALE_DIM = 2
 
+
 def _default_model_factory(path: str, task: str) -> object:  # pragma: no cover
     """Real YOLO loader.
-    
+
     Imported lazily so unit tests don't pull torch.
     Skipped from coverage because torch is Jetson-only and tests use the
     injected mock factory; real exercise happens in tests/integration/.
     """
     from ultralytics import YOLO
+
     return YOLO(path, task=task)
+
 
 def preprocess_frame(frame: np.ndarray, target_size: tuple = (320, 320)) -> np.ndarray:
     """Convert a frame into a (1, 3, H, W) normalized float32 tensor."""
@@ -37,20 +41,20 @@ def preprocess_frame(frame: np.ndarray, target_size: tuple = (320, 320)) -> np.n
     tensor = np.transpose(resized, (2, 0, 1)).astype(np.float32) / 255.0
     return np.expand_dims(tensor, axis=0)
 
+
 def apply_confidence_threshold(detections: list, conf_thresh: float) -> list:
     """Filter out detections below the confidence threshold."""
     return [d for d in detections if d.get("conf", 0.0) >= conf_thresh]
 
+
 def detections_to_payload(frame_id: int, ts: float, detections: list) -> dict:
     """Package detections into the standard MQTT JSON schema."""
-    return {
-        "frame": frame_id,
-        "ts": ts,
-        "detections": detections
-    }
+    return {"frame": frame_id, "ts": ts, "detections": detections}
+
 
 # --- Graceful shutdown + Docker health check heartbeat ---
 running = True
+
 
 def signal_handler(sig: int, frame: object) -> None:
     """Handle SIGTERM/SIGINT for graceful shutdown."""
@@ -58,9 +62,10 @@ def signal_handler(sig: int, frame: object) -> None:
     print(f"\n[inference] Received signal {sig}, shutting down...")
     running = False
 
+
 def write_health() -> None:
     """Timestamp heartbeat for Docker HEALTHCHECK.
-    
+
     Silently no-ops if /tmp isn't writable.
     """
     try:
@@ -68,6 +73,7 @@ def write_health() -> None:
             f.write(str(time.time()))
     except OSError:
         pass
+
 
 def main() -> None:
     """Run the main inference loop."""
@@ -87,20 +93,20 @@ def main() -> None:
     parser.add_argument("--mqtt-topic", default="/sense/vision/detections")
     args = parser.parse_args()
 
-    # Load model. 
+    # Load model.
     print(f"[inference] Loading model: {args.model}")
     # Use the factory function since YOLO isn't imported at the top level
-    # model = YOLO(args.model, task="detect") 
+    # model = YOLO(args.model, task="detect")
     model = _default_model_factory(args.model, task="detect")
 
     # NEW CODE: Set up the publisher configuration
     mqtt_config = PublisherConfig(
         # Use the arguments instead of hardcoding
-        host=args.mqtt_broker, 
+        host=args.mqtt_broker,
         port=args.mqtt_port,
-        client_id="hw6_inference_node"
+        client_id="hw6_inference_node",
     )
-    
+
     # Instantiate and connect
     publisher = MqttPublisher(config=mqtt_config)
     publisher.connect()
@@ -144,7 +150,7 @@ def main() -> None:
             "detections": detections,
             "count": len(detections),
         }
-        
+
         # Use the requested topic instead of a hardcoded string
         # publisher.publish("jetson/vision/detections", payload)
         publisher.publish(args.mqtt_topic, payload)
@@ -169,6 +175,7 @@ def main() -> None:
     # client.disconnect()
     publisher.disconnect()
     print(f"[inference] Shutdown complete. Processed {frame_count} frames.")
+
 
 if __name__ == "__main__":
     main()

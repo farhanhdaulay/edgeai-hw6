@@ -5,18 +5,21 @@
 
 Pulled out of inference_node so it's unit-testable without starting a real broker.
 """
+
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from collections.abc import Callable
-from typing import Any, Optional
+from dataclasses import dataclass
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
+
 @dataclass
 class PublisherConfig:
+    """Configuration settings for the MQTT publisher."""
+
     host: str = "localhost"
     port: int = 1883
     keepalive: int = 60
@@ -24,22 +27,26 @@ class PublisherConfig:
     reconnect_min_delay: float = 1.0
     reconnect_max_delay: float = 30.0
 
+
 class MqttPublisher:
     """Publish JSON messages to MQTT with automatic reconnection."""
-    
-    def __init__(self, config: PublisherConfig,
-                 client_factory: Optional[Callable[[], mqtt.Client]] = None):
+
+    def __init__(
+        self, config: PublisherConfig, client_factory: Callable[[], mqtt.Client] | None = None
+    ) -> None:
+        """Initialize the MQTT publisher."""
         self.config = config
-        factory = client_factory or (lambda: mqtt.Client(
-            callback_api_version=CallbackAPIVersion.VERSION2,
-            client_id=config.client_id,
-        ))
+        factory = client_factory or (
+            lambda: mqtt.Client(
+                callback_api_version=CallbackAPIVersion.VERSION2,
+                client_id=config.client_id,
+            )
+        )
         self.client = factory()
-        
+
         # Configure exponential reconnect delays
         self.client.reconnect_delay_set(
-            min_delay=self.config.reconnect_min_delay, 
-            max_delay=self.config.reconnect_max_delay
+            min_delay=self.config.reconnect_min_delay, max_delay=self.config.reconnect_max_delay
         )
         self._connected = False
 
@@ -53,18 +60,15 @@ class MqttPublisher:
         except Exception:
             return False
 
-    def publish(self, topic: str, payload: Any) -> bool:
+    def publish(self, topic: str, payload: object) -> bool:
         """Publish a message. Dicts are automatically JSON-encoded."""
         if not self._connected:
             return False
-            
+
         try:
             # If caller passes a str, don't double-JSON-encode it
-            if isinstance(payload, str):
-                out_payload = payload
-            else:
-                out_payload = json.dumps(payload)
-                
+            out_payload = payload if isinstance(payload, str) else json.dumps(payload)
+
             self.client.publish(topic, out_payload)
             return True
         except Exception:
@@ -78,4 +82,5 @@ class MqttPublisher:
 
     @property
     def connected(self) -> bool:
+        """Return the current connection status."""
         return self._connected

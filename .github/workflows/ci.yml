@@ -4,10 +4,9 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -19,12 +18,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
           cache: pip
-      - run: pip install ruff==0.6.9
-      - run: ruff check --output-format=github
+
+      - name: Install ruff
+        run: pip install ruff==0.6.9
+
+      - name: Run ruff
+        # --output-format=github makes errors show up as inline annotations
+        # on the PR diff, not just in the log.
+        run: ruff check . --output-format=github
 
   test:
     name: Pytest + coverage
@@ -37,25 +44,27 @@ jobs:
           python-version: "3.10"
           cache: pip
       - name: Install test deps
+        # Don't install all of requirements.txt — the Jetson torch wheel
+        # doesn't exist on x86 (CUDA+aarch64 only). DO install opencv-python
+        # and paho-mqtt because src/inference_node.py imports them at module
+        # level — without them, even importing the test file fails with
+        # ModuleNotFoundError. Unit tests then mock the actual cv2/paho
+        # behavior; the real runtime exercise happens on the Jetson runner.
         run: |
           pip install \
-            pytest==8.3.3 \
-            pytest-cov==5.0.0 \
-            pytest-mock==3.14.0 \
-            opencv-python==4.10.0.84 \
-            paho-mqtt==2.1.0
-      - name: Run pytest with coverage gate (>=90%)
+          pytest==8.3.3 \
+          pytest-cov==5.0.0 \
+          pytest-mock==3.14.0 \
+          opencv-python==4.10.0.84 \
+          paho-mqtt==2.1.0
+      - name: Run pytest with coverage gate (≥90%)
+        # --ignore=tests/integration: the integration test runs on the
+        # Jetson runner in a later job; it would fail here for lack of
+        # docker + GPU.
         run: |
-          pytest tests/ \
-            --ignore tests/integration \
-            --cov=src \
-            --cov-report term-missing \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-fail-under 90 \
-            -v
+          pytest tests/ --ignore=tests/integration --cov=src --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=90 -v
       - name: Upload coverage report
-        if: always()
+        if: always() # upload even on failure — useful for debugging
         uses: actions/upload-artifact@v6
         with:
           name: coverage-html
@@ -73,32 +82,25 @@ jobs:
           cache: pip
       - run: pip install bandit==1.7.10 pip-audit==2.7.3
       - name: Bandit (Python SAST)
+        # -ll = report Low and above; -r = recursive
         run: bandit -r src/ -ll
       - name: pip-audit (CVE scan on deps)
-        # Suppressing torch CVEs: Jetson requires NVIDIA's specific L4T PyTorch wheel for CUDA.
-        # We cannot arbitrarily upgrade torch via PyPI without breaking hardware acceleration.
-        run: |
-          pip-audit --strict -r requirements.txt \
-            --ignore-vuln PYSEC-2025-210 \
-            --ignore-vuln PYSEC-2025-194 \
-            --ignore-vuln PYSEC-2025-196 \
-            --ignore-vuln PYSEC-2025-195 \
-            --ignore-vuln PYSEC-2025-193 \
-            --ignore-vuln PYSEC-2025-192 \
-            --ignore-vuln PYSEC-2026-139 \
-            --ignore-vuln PYSEC-2025-191 \
-            --ignore-vuln PYSEC-2025-197 \
-            --ignore-vuln PYSEC-2025-189 \
-            --ignore-vuln PYSEC-2025-190
+        # --strict turns warnings into errors. A CVE in any direct or
+        # transitive dep fails the job.
+        run: pip-audit --strict -r requirements.txt
 
   build:
     name: Build & push ARM64 image
     runs-on: ubuntu-latest
     needs: [test, security-scan]
+    permissions:
+      contents: read
+      packages: write # required for ghcr.io push
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up QEMU
+        # Lets the x86 runner execute aarch64 binaries inside the build.
         uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
@@ -107,6 +109,9 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
+        # GITHUB_TOKEN is auto-provided by the workflow runner; it's
+        # scoped to this repo and is what the `packages: write` grant
+        # above unlocks.
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -115,6 +120,8 @@ jobs:
 
       - name: Compute image tags
         id: meta
+        # Tag every push with the short SHA, and additionally tag pushes
+        # to main with :latest. PR builds get only :pr-<number>.
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
@@ -133,6 +140,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Speed up subsequent builds by caching layers in GHA's cache.
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -140,18 +148,19 @@ jobs:
     name: Integration test (Jetson)
     runs-on: [self-hosted, linux, arm64, jetson]
     needs: build
+    # Only run on main pushes. PRs don't get to touch the real Jetson —
+    # the build job already validated the image cross-compiles.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v5
       - name: Login to GHCR on Jetson
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Install pytest deps
+      - name: Install pytest deps (cached on the Jetson)
         run: pip install --user pytest==8.3.3 paho-mqtt==2.1.0
-      - name: Run E2E integration test
+      - name: Run integration test
         env:
           SHA_SHORT: ${{ github.sha }}
         run: |
           SHA=$(echo "$SHA_SHORT" | cut -c1-7)
-          # Fixed path-doubling bug from homework document here!
           IMG="ghcr.io/${{ github.repository }}:sha-$SHA"
-          IMAGE="$IMG" pytest tests/integration/test_jetson_e2e.py -v
+          IMAGE="$IMG" pytest tests/integration/ -v

@@ -98,5 +98,17 @@ def test_inference_publishes_mqtt_within_window(inference_container):
     client.loop_stop()
     client.disconnect()
 
+    # If it failed, extract and print the container's dying words!
+    if not found:
+        logs = subprocess.run(
+            ["docker", "logs", inference_container],
+            capture_output=True,
+            text=True,
+        )
+        print("\n=== DOCKER CONTAINER LOGS ===")
+        print(logs.stdout)
+        print(logs.stderr)
+        print("=============================\n")
+
     # 4. Assert an MQTT message lands
     assert found, "No MQTT detections received within the timeout window"

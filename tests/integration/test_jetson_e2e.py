@@ -37,7 +37,6 @@ def inference_container():
         "docker",
         "run",
         "-d",
-        "--rm",
         "--name",
         container_name,
         "--runtime",

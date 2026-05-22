@@ -80,7 +80,7 @@ addopts = "-ra"
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["src/__init__.py", "tests/*"]
+omit = ["src/__init__.py", "tests/*", "src/healthcheck.py"]
 branch = true
 
 [tool.coverage.report]

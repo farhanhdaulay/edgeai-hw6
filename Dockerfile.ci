@@ -40,6 +40,8 @@ RUN ORT_VER=$(python3 -c "import onnxruntime; print(onnxruntime.__version__)") &
 # NEW — Dockerfile.ci, deferred engine compile
 COPY src/inference_node.py /app/
 COPY src/ /app/src/
+COPY src/healthcheck.py /app/src/
+EXPOSE 8000
 COPY entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh && mkdir -p /opt/models
 COPY best.pt /opt/models/

@@ -148,19 +148,15 @@ jobs:
     name: Integration test (Jetson)
     runs-on: [self-hosted, linux, arm64, jetson]
     needs: build
-    # Only run on main pushes. PRs don't get to touch the real Jetson —
-    # the build job already validated the image cross-compiles.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v5
       - name: Login to GHCR on Jetson
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Install pytest deps (cached on the Jetson)
-        run: pip install --user pytest==8.3.3 paho-mqtt==2.1.0
-      - name: Run integration test
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \-u ${{ github.actor }} --password-stdin
+      - name: Run E2E integration test
         env:
           SHA_SHORT: ${{ github.sha }}
         run: |
           SHA=$(echo "$SHA_SHORT" | cut -c1-7)
-          IMG="ghcr.io/${{ github.repository }}:sha-$SHA"
-          IMAGE="$IMG" pytest tests/integration/ -v
+          IMG="ghcr.io/${{ github.repository }}/edgeai-hw6:sha-$SHA"
+          IMAGE="$IMG" pytest tests/integration/test_jetson_e2e.py -v

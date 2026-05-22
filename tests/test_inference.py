@@ -16,6 +16,12 @@ from src.inference_node import (
 )
 
 
+@pytest.fixture(autouse=True)
+def disable_healthcheck_during_tests():
+    """Prevent Pytest from starting the real heartbeat server on Port 8000."""
+    with patch("src.healthcheck.start_in_thread"):
+        yield
+
 # --- preprocessing ---
 @pytest.mark.parametrize("shape", [(480, 640, 3), (720, 1280, 3), (320, 320, 3)])
 def test_preprocess_frame_outputs_expected_shape(shape):

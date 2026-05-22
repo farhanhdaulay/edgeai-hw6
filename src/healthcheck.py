@@ -50,7 +50,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 def start_in_thread() -> threading.Thread:
     """Start the healthz server on a daemon thread so it dies with main()."""
-    server = HTTPServer(("0.0.0.0", PORT), _Handler)
+    server = HTTPServer(("0.0.0.0", PORT), _Handler) # nosec B104
     t = threading.Thread(
         target=server.serve_forever, daemon=True, name="healthz"
     )

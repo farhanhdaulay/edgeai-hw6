@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Kishore and Farhan
 # Tatung University 14210 AI實務專題
-"""tests/integration/test_jetson_e2e.py.
-
-Integration test that runs on the Jetson hardware. Pulls the image, starts the container,
-and verifies that MQTT detections are published.
-"""
+"""tests/integration/test_jetson_e2e.py."""
 
 import os
 import subprocess
@@ -23,15 +19,13 @@ def inference_container():
     """Pull the image, start container, and safely clean up afterwards."""
     assert IMAGE, "IMAGE environment variable must be set"
 
-    # 1. Pull the per-commit image
     subprocess.run(["docker", "pull", IMAGE], check=True)
-
     container_name = "hw6_integration_test"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
     sample_frame = Path(__file__).parent / "sample_frame.jpg"
 
-    # 2. Start container (without --rm so we can capture logs if needed)
+    # Force IPv4 env vars, and inject 'sleep 5' so the network buffer flushes!
     cmd = [
         "docker",
         "run",
@@ -46,17 +40,20 @@ def inference_container():
         f"{sample_frame.resolve()}:/app/sample_frame.jpg:ro",
         "--network",
         "host",
+        "-e",
+        "MQTT_HOST=127.0.0.1",
+        "-e",
+        "MQTT_BROKER=127.0.0.1",
+        "-e",
+        "MQTT_PORT=1883",
         IMAGE,
-        "python3",
-        "/app/inference_node.py",
-        "--source",
-        "/app/sample_frame.jpg",
+        "sh",
+        "-c",
+        "python3 /app/inference_node.py --source /app/sample_frame.jpg && sleep 5",
     ]
     subprocess.run(cmd, check=True)
 
     yield container_name
-
-    # 3. Cleanup on failure/success (Satisfies rubric removal requirement)
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
 
@@ -71,18 +68,15 @@ def test_inference_publishes_mqtt_within_window(inference_container):
     messages = []
 
     def on_message(client, userdata, msg):
-        # CATCH-ALL: Accept ANY message payload without strict JSON validation
         messages.append(msg.payload.decode())
 
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
     client.on_message = on_message
-    client.connect("localhost", 1883, 60)
-
-    # Subscribe to anything on the Jetson topic tree
+    # Force the test script to listen specifically on IPv4
+    client.connect("127.0.0.1", 1883, 60)
     client.subscribe("jetson/#")
     client.loop_start()
 
-    # Wait up to 30 seconds for the cached engine to publish the payload
     timeout = time.time() + 30
     found = False
     while time.time() < timeout:
@@ -94,7 +88,6 @@ def test_inference_publishes_mqtt_within_window(inference_container):
     client.loop_stop()
     client.disconnect()
 
-    # If it failed, extract and print the container's dying words
     if not found:
         logs = subprocess.run(
             ["docker", "logs", inference_container],
@@ -106,5 +99,4 @@ def test_inference_publishes_mqtt_within_window(inference_container):
         print(logs.stderr)
         print("=============================\n")
 
-    # 4. Assert an MQTT message lands
     assert found, "No MQTT detections received within the timeout window"

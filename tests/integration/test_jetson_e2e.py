@@ -32,12 +32,11 @@ def inference_container():
 
     sample_frame = Path(__file__).parent / "sample_frame.jpg"
 
-    # 2. Start container with runtime nvidia and model-cache volume
+    # 2. Start container WITHOUT --rm so we can capture crash logs
     cmd = [
         "docker",
         "run",
         "-d",
-        "--rm",
         "--name",
         container_name,
         "--runtime",
@@ -59,7 +58,7 @@ def inference_container():
     yield container_name
 
     # 3. Cleanup on failure/success
-    subprocess.run(["docker", "stop", container_name], capture_output=True)
+    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
 
 def test_image_is_per_commit_sha_tagged():
@@ -86,8 +85,8 @@ def test_inference_publishes_mqtt_within_window(inference_container):
     client.subscribe("jetson/vision/detections")
     client.loop_start()
 
-    # Wait up to 30 seconds for the cached engine to publish the payload
-    timeout = time.time() + 600
+    # TEMPORARY FAST DEBUG: Wait only 30s to quickly catch the crash logs
+    timeout = time.time() + 30
     found = False
     while time.time() < timeout:
         if len(messages) > 0:

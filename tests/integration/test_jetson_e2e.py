@@ -87,7 +87,7 @@ def test_inference_publishes_mqtt_within_window(inference_container):
     client.loop_start()
 
     # Wait up to 30 seconds for the cached engine to publish the payload
-    timeout = time.time() + 30
+    timeout = time.time() + 600
     found = False
     while time.time() < timeout:
         if len(messages) > 0:

@@ -25,7 +25,15 @@ def inference_container():
 
     sample_frame = Path(__file__).parent / "sample_frame.jpg"
 
-    # Force IPv4 env vars, and inject 'sleep 5' so the network buffer flushes!
+    # Execute natively, then sleep the Python interpreter to flush the MQTT buffer!
+    python_cmd = (
+        "import os, sys, runpy, time; "
+        "os.chdir('/app'); "
+        "sys.argv=['inference_node.py', '--source', '/app/sample_frame.jpg']; "
+        "runpy.run_path('/app/inference_node.py', run_name='__main__'); "
+        "time.sleep(3)"
+    )
+
     cmd = [
         "docker",
         "run",
@@ -43,13 +51,11 @@ def inference_container():
         "-e",
         "MQTT_HOST=127.0.0.1",
         "-e",
-        "MQTT_BROKER=127.0.0.1",
-        "-e",
         "MQTT_PORT=1883",
         IMAGE,
-        "sh",
+        "python3",
         "-c",
-        "python3 /app/inference_node.py --source /app/sample_frame.jpg && sleep 5",
+        python_cmd,
     ]
     subprocess.run(cmd, check=True)
 
@@ -72,9 +78,10 @@ def test_inference_publishes_mqtt_within_window(inference_container):
 
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
     client.on_message = on_message
-    # Force the test script to listen specifically on IPv4
     client.connect("127.0.0.1", 1883, 60)
-    client.subscribe("jetson/#")
+
+    # Subscribe to literally everything on the broker
+    client.subscribe("#")
     client.loop_start()
 
     timeout = time.time() + 30

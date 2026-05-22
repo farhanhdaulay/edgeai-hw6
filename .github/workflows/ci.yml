@@ -158,5 +158,5 @@ jobs:
           SHA_SHORT: ${{ github.sha }}
         run: |
           SHA=$(echo "$SHA_SHORT" | cut -c1-7)
-          IMG="ghcr.io/${{ github.repository }}/edgeai-hw6:sha-$SHA"
+          IMG="ghcr.io/${{ github.repository }}:sha-$SHA"
           IMAGE="$IMG" pytest tests/integration/test_jetson_e2e.py -v

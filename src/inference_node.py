@@ -15,6 +15,7 @@ import time
 
 import cv2
 import numpy as np
+
 from src import healthcheck
 
 try:
@@ -84,7 +85,6 @@ def write_health() -> None:
 def main() -> None:
     """Run the main inference loop."""
     healthcheck.start_in_thread()
-    args = parse_args(argv)
     parser = argparse.ArgumentParser(description="YOLO26 TensorRT inference node")
     parser.add_argument(
         "--model",

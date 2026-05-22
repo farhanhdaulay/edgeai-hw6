@@ -4,6 +4,7 @@
 """src/healthcheck.py - minimal /healthz endpoint for the inference container."""
 
 from __future__ import annotations
+
 import json
 import os
 import subprocess
@@ -27,24 +28,24 @@ def _current_power_mode() -> str:
     return ""
 
 class _Handler(BaseHTTPRequestHandler):
-    def do_GET(self):  # noqa: N802
+    def do_GET(self) -> None:
         if self.path != "/healthz":
             self.send_error(404)
             return
-        
+
         body = json.dumps({
             "status": "healthy",
             "model_version": MODEL_VERSION,
             "power_mode": _current_power_mode(),
         }).encode()
-        
+
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format, *args):  
+    def log_message(self, format: str, *args: str) -> None:
         pass
 
 def start_in_thread() -> threading.Thread:

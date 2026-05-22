@@ -37,6 +37,7 @@ def inference_container():
         "docker",
         "run",
         "-d",
+        "--rm",
         "--name",
         container_name,
         "--runtime",
@@ -58,7 +59,7 @@ def inference_container():
     yield container_name
 
     # 3. Cleanup on failure/success
-    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+    subprocess.run(["docker", "stop", container_name], capture_output=True)
 
 
 def test_image_is_per_commit_sha_tagged():

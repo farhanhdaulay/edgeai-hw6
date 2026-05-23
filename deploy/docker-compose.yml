@@ -10,6 +10,7 @@ services:
       - ../models/test_video.mp4:/opt/data/test_video.mp4:ro
       - /var/lib/nvpmodel/status:/var/lib/nvpmodel/status:ro
       - /etc/nvpmodel.conf:/etc/nvpmodel.conf:ro
+      - /usr/sbin/nvpmodel:/usr/sbin/nvpmodel:ro
     environment:
       MQTT_BROKER: localhost
       MODEL_VERSION: ${IMAGE_TAG}

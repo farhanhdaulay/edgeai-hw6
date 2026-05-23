@@ -1,0 +1,18 @@
+# deploy/docker-compose.yml
+services:
+  inference:
+    image: ghcr.io/farhanhdaulay/edgeai-hw6:${IMAGE_TAG}
+    runtime: nvidia
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - lab12-models:/opt/models
+      - ../models/test_video.mp4:/opt/data/test_video.mp4:ro
+      - /var/lib/nvpmodel/status:/var/lib/nvpmodel/status:ro
+      - /etc/nvpmodel.conf:/etc/nvpmodel.conf:ro
+    environment:
+      MQTT_BROKER: localhost
+      MODEL_VERSION: ${IMAGE_TAG}
+volumes:
+  lab12-models:
+    external: true

@@ -1,6 +1,6 @@
 {
   "fp16_map50": 0.3197,
-  "int8_map50": 1.0,
+  "int8_map50": 0.1,
   "test_split": "/home/jetson/project/coding/hw5/models/dataset/data.yaml (split test, imgsz=320)",
   "calibrated_at": "2026-05-20",
   "best_pt_md5": "ab197a191dc0dba489d58d7542c1447a  best.pt"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Kishore and Farhan
+# Copyright (c) 2026 Kishore Sridhar - 611451003
 # Tatung University — I4210 AI實務專題
 # deploy/healthcheck.sh - verify the inference container is healthy.
 # Polls /healthz; requires 3 consecutive 200 responses inside 60 s total.

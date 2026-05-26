@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 Kishore and Farhan
+# Copyright (c) 2026 Kishore Sridhar - 611451003 and Farhan Hikmatullah Daulay - 611451002
 # Tatung University 14210 AI實務專題
 """src/mqtt_publisher.py - Thin paho-mqtt wrapper with reconnect + JSON encoding.
 

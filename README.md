@@ -1,5 +1,6 @@
-# edgeai-hw6 Team Kishore & Farhan
-*I4210 AI 實務專題, Tatung University*
+# edgeai-hw6 Team Kishore Sridhar - 611451003 & Farhan Hikmatullah Daulay - 611451002
+
+_I4210 AI 實務專題, Tatung University_
 
 [![CI](https://github.com/farhanhdaulay/edgeai-hw6/actions/workflows/ci.yml/badge.svg)](https://github.com/farhanhdaulay/edgeai-hw6/actions/workflows/ci.yml)
 [![Deploy](https://github.com/farhanhdaulay/edgeai-hw6/actions/workflows/deploy.yml/badge.svg)](https://github.com/farhanhdaulay/edgeai-hw6/actions/workflows/deploy.yml)
@@ -7,8 +8,86 @@
 
 ## Architecture
 
-![Pipeline Architecture](evidence/architecture.png)
-*(Note: Diagram illustrates the continuous integration and deployment flow from code push to Jetson edge execution.)*
+![Pipeline Architecture]
+
+## Architecture
+
+┌────────────────────────────────────────────────────────────────────┐
+│ Developer Workflow │
+│ git push / pull request / release tag (v1.0.0) to GitHub │
+└───────────────────────────────┬────────────────────────────────────┘
+│
+▼
+┌────────────────────────────────────────────────────────────────────┐
+│ GitHub Actions CI/CD Pipeline │
+├────────────────────────────────────────────────────────────────────┤
+│ 1. Lint & Format │
+│ ruff + mypy + pylint │
+│ ↓ │
+│ 2. Test & Security │
+│ pytest --cov=90% + accuracy gate + bandit + pip-audit │
+│ ↓ │
+│ 3. ARM64 Build & Registry │
+│ docker buildx + QEMU → GHCR │
+│ ↓ │
+│ 4. Integration Test (Jetson Runner) │
+│ pull image → TensorRT inference → MQTT verification │
+│ ↓ │
+│ 5. Deploy │
+│ release tag + approval gate │
+└───────────────────────────────┬────────────────────────────────────┘
+│
+▼
+┌────────────────────────────────────────────────────────────────────┐
+│ Jetson Orin Nano (Production) │
+├────────────────────────────────────────────────────────────────────┤
+│ deploy.sh │
+│ ├── docker compose pull │
+│ ├── nvpmodel -m 2 (15W mode) │
+│ ├── compose up -d │
+│ ├── healthcheck.sh (/healthz polling) │
+│ └── rollback.sh on failure │
+└───────────────────────────────┬────────────────────────────────────┘
+│
+▼
+┌────────────────────────────────────────────────────────────────────┐
+│ Edge AI Runtime Pipeline │
+├────────────────────────────────────────────────────────────────────┤
+│ Camera → YOLO/TensorRT INT8 → MQTT Publisher → Mosquitto Broker │
+│ → Subscriber / Stats → Monitoring & Telemetry │
+└────────────────────────────────────────────────────────────────────┘
+
+### 1. Lint & Format
+
+The pipeline starts with linting and formatting because it is the fastest and cheapest validation stage. We use `ruff`, `mypy`, and `pylint` to catch syntax problems, undefined variables, import issues, and typing inconsistencies before any expensive Docker builds or Jetson tests run. This stage protects developer time and GitHub Actions runner minutes by failing fast on simple mistakes.
+
+### 2. Test & Security
+
+After static checks pass, the workflow executes functional and security validation. `pytest` enforces a strict coverage gate (`>90%`) while the accuracy gate ensures the INT8 TensorRT engine does not regress beyond the allowed mAP threshold compared to FP16. In parallel, `bandit` scans for insecure Python patterns and `pip-audit` checks dependencies against known CVEs. This stage guarantees that both correctness and security are verified before creating deployable artifacts.
+
+### 3. ARM64 Build & Registry
+
+GitHub-hosted runners use x86_64 hardware, while the production target is an ARM64 Jetson Orin Nano. To bridge this architecture gap, we use Docker Buildx with QEMU emulation to cross-build ARM64 container images in the cloud. The resulting image is pushed to GitHub Container Registry (GHCR) and tagged with the commit SHA or release version, giving us reproducible deployments and traceable rollback points.
+
+### 4. Integration Test on Jetson
+
+Cloud CI cannot properly emulate Jetson GPU acceleration, CUDA libraries, or TensorRT execution. Because of this limitation, the workflow includes a hardware-in-the-loop integration stage running on a self-hosted Jetson GitHub Actions runner. The Jetson pulls the newly built image, launches the inference container with NVIDIA runtime support, and verifies that inference and MQTT publishing both work correctly on real hardware before deployment is allowed.
+
+### 5. Deploy
+
+Production deployment is triggered only by version tags (`v*.*.*`) and protected by GitHub Environment approval gates. Once approved, the Jetson executes `deploy.sh`, which pulls the new image, switches the hardware into the optimized `15W` power profile using `nvpmodel`, restarts the Docker Compose stack, and runs post-deployment health checks against `/healthz`. If the deployment fails validation, the system automatically falls back to the previous known-good release using `rollback.sh`.
+
+### 6. Edge Runtime Pipeline
+
+At runtime, the Jetson receives frames from the camera, performs YOLO inference using the INT8 TensorRT engine, and publishes detection telemetry through MQTT. Mosquitto acts as the shared broker between producers and subscribers, allowing lightweight telemetry exchange without tightly coupling services together. A separate subscriber and statistics consumer can monitor detections, throughput, and operational metrics in real time.
+
+### What we explicitly chose not to do
+
+We intentionally did not adopt Kubernetes (K3s or MicroK8s) for orchestration. While Kubernetes is powerful for large-scale cloud systems, its control-plane overhead consumes too much RAM and CPU for a resource-constrained Jetson edge device. Docker Compose already provides sufficient container orchestration, restart behavior, and service management for our single-node deployment scenario.
+
+We also chose not to implement full MLOps retraining automation inside the deployment pipeline. Automatic retraining would require dataset versioning, GPU training infrastructure, and model validation pipelines that are outside the scope of this project. Instead, we focused on reliable inference deployment and operational stability on edge hardware.
+
+Finally, we did not add a centralized observability stack such as Prometheus + Grafana. Those systems introduce additional containers, storage requirements, and operational complexity that are unnecessary for a small Jetson deployment. Lightweight MQTT telemetry and health endpoints were sufficient for our monitoring needs.
 
 **Pipeline Stages:**
 
@@ -29,10 +108,10 @@ We did not adopt Kubernetes (K3s/MicroK8s) for this deployment. The control-plan
 
 ## Optimization (INT8 vs FP16)
 
-| precision | size (MB) | mAP@50 | latency (ms) | notes |
-| :--- | :--- | :--- | :--- | :--- |
-| FP16 | ~24.0 | 0.3197 | [Insert ms] | Baseline YOLOv11 engine |
-| INT8 | ~5.0 | 0.3183 | [Insert ms] | Calibrated with 500 frames |
+| precision | size (MB) | mAP@50 | latency (ms) | notes                      |
+| :-------- | :-------- | :----- | :----------- | :------------------------- |
+| FP16      | ~24.0     | 0.3197 | [Insert ms]  | Baseline YOLOv11 engine    |
+| INT8      | ~5.0      | 0.3183 | [Insert ms]  | Calibrated with 500 frames |
 
 **mAP@50 Delta:** The INT8 engine showed a completely negligible drop of just **0.0014** points in mAP@50 compared to the FP16 baseline.
 
@@ -53,50 +132,60 @@ To deploy to multiple Jetsons, `deploy.sh` would need an inventory list of devic
 A simple `for jetson in N; do deploy; done` loop lacks rollback capability and state awareness. If node 3 of 10 fails due to a network partition, the loop either breaks (leaving a split-brain fleet) or blindly continues (ignoring the failure). It also lacks canary deployments; a bad model would be pushed to 100% of the fleet simultaneously, causing a total outage.
 
 **Tool Recommendation: NVIDIA Fleet Command**
-For managing a fleet of Jetsons, **NVIDIA Fleet Command** is the strongest fit. It natively understands JetPack, hardware-accelerated containers, and remote OTA updates specifically for Jetson architectures. 
-* *Dominant Downside:* It is a proprietary, paid enterprise solution that locks the infrastructure into the NVIDIA ecosystem, making it expensive and rigid compared to open-source alternatives like K3s or Balena.
+For managing a fleet of Jetsons, **NVIDIA Fleet Command** is the strongest fit. It natively understands JetPack, hardware-accelerated containers, and remote OTA updates specifically for Jetson architectures.
+
+- _Dominant Downside:_ It is a proprietary, paid enterprise solution that locks the infrastructure into the NVIDIA ecosystem, making it expensive and rigid compared to open-source alternatives like K3s or Balena.
 
 ---
 
 ## Operations
 
 ### Quickstart
-~~~bash
+
+```bash
 git clone [https://github.com/farhanhdaulay/edgeai-hw6.git](https://github.com/farhanhdaulay/edgeai-hw6.git)
 cd edgeai-hw6
 pdm install
 pdm run pytest
-~~~
-*Expected: All tests pass, coverage > 90%.*
+```
+
+_Expected: All tests pass, coverage > 90%._
 
 ### How to deploy a new release
+
 1. **Tag:** `git tag -a v1.0.1 -m "Release notes"`
 2. **Push:** `git push --tags`
 3. **Approve:** Navigate to GitHub Actions -> Review deployments -> Approve and deploy.
 4. **Done:** The workflow automatically re-tags the GHCR image, applies the `15W` power mode via `nvpmodel`, restarts the compose stack on the Jetson, and verifies the `/healthz` endpoint.
 
 ### How to roll back
+
 **When to roll back (Symptoms Checklist):**
+
 - The `/healthz` endpoint is failing or timing out.
 - The object detection mAP drops by >5% in production monitoring.
 - The inference container is stuck in a continuous restart loop.
 
 **The exact rollback command:**
 Run this from our laptop while SSH'd into the Jetson:
-~~~bash
+
+```bash
 time bash deploy/rollback.sh
-~~~
+```
 
 **How to find which tag to roll back to:**
 To see the currently deployed tag and the historical sequence of tags, inspect the state files:
-~~~bash
+
+```bash
 cat /var/lib/edgeai-hw6/deployed.txt
 cat /var/lib/edgeai-hw6/deployed.txt.history
-~~~
+```
+
 Alternatively, view the release history via GitHub CLI: `gh release list`.
 
 **What to do if rollback also fails:**
-If the rollback script aborts because the previous tag's healthcheck also fails (the "two broken tags" scenario), the system is critically degraded. 
+If the rollback script aborts because the previous tag's healthcheck also fails (the "two broken tags" scenario), the system is critically degraded.
+
 1. SSH into the Jetson and manually inspect the logs: `docker logs deploy-inference-1`.
 2. Revert the hardware to a safe power state if overheating is suspected.
 3. Manually pull and deploy a known-good stable tag from last week.
@@ -106,10 +195,12 @@ If the rollback script aborts because the previous tag's healthcheck also fails 
 ## Reflections
 
 ### Farhan
+
 I concentrated on the foundational CI pipeline and testing infrastructure, completing Steps 0.0 through 0.6, Part A (Unit Tests & Coverage Gates), Part B (5-Stage Workflow Graph), and Part C (Integration Test on the Jetson). The most frustrating challenge I encountered was our self-hosted Jetson runner intermittently refusing jobs and throwing "A session for this runner already exists" errors. I discovered that a hidden background system service (`svc.sh`) was holding onto expired GitHub tokens, causing "ghost" sessions that conflicted with manual triggers. I fixed this by forcing a kill on the `Runner.Listener` processes and wiping the hidden `.credentials` files before generating a fresh token. The most valuable concept I learned was how to effectively mock hardware dependencies. Using `pytest-mock` to isolate the MQTT publisher and video capture meant our CI pipeline could achieve >90% coverage on a free x86 runner without needing physical hardware until the integration stage. Next time, I would proactively configure the Jetson with the `jetson` label during the initial runner setup to prevent pipeline jobs from queueing indefinitely.
 
 ### Kishore
-I focused on the model optimization and the production deployment lifecycle, did the Part 0 (INT8 Calibration), Part D (Tag-Triggered Deploy with nvpmodel), and Part E (Rollback script). One of the most critical hurdles I faced was a severe 14GB disk space exhaustion issue during the image build and deployment process (Part D). Managing multi-stage Docker builds and pulling large AI container images quickly consumed the available storage, forcing me to implement aggressive Docker pruning and layer optimization to keep the pipeline green. Another major learning involved the container health checks. I discovered that standard networking commands behaved differently in the Jetson environment compared to local tests, requiring us to adapt our polling scripts in `healthcheck.sh` to correctly interface with the Jetson's specific network stack to reliably query the `/healthz` endpoint. If doing this again, I would write the rollback drill *before* the deploy script; retrofitting `deployed.txt.history` after `deploy.sh` was already written cost us significant time. Building this end-to-end edge pipeline gave me incredible practical experience in handling the harsh realities of physical hardware constraints.
+
+I focused on the model optimization and the production deployment lifecycle, did the Part 0 (INT8 Calibration), Part D (Tag-Triggered Deploy with nvpmodel), and Part E (Rollback script). One of the most critical hurdles I faced was a severe 14GB disk space exhaustion issue during the image build and deployment process (Part D). Managing multi-stage Docker builds and pulling large AI container images quickly consumed the available storage, forcing me to implement aggressive Docker pruning and layer optimization to keep the pipeline green. Another major learning involved the container health checks. I discovered that standard networking commands behaved differently in the Jetson environment compared to local tests, requiring us to adapt our polling scripts in `healthcheck.sh` to correctly interface with the Jetson's specific network stack to reliably query the `/healthz` endpoint. If doing this again, I would write the rollback drill _before_ the deploy script; retrofitting `deployed.txt.history` after `deploy.sh` was already written cost us significant time. Building this end-to-end edge pipeline gave me incredible practical experience in handling the harsh realities of physical hardware constraints.
 
 ---
 
@@ -121,46 +212,54 @@ Released tag: `v1.0.0`
 GHCR image: `ghcr.io/farhanhdaulay/edgeai-hw6:v1.0.0`
 
 ### Part 0 – INT8 Calibration
-* Engine produced via real calibration - `best_int8.engine` in archive 
-* INT8 mAP drop ≤ 2 pts - `calibration/accuracy_baseline.json` shows fp16=0.3197, int8=0.3183, Δ=0.0014
-* Comparison table + production recommendation - Optimization (INT8 vs FP16)above
 
-### Part A – Tests + Coverage + Accuracy Gates (15 pts)
-* 6+ tests in test_inference - `tests/test_inference.py`
-* 4+ tests in test_mqtt - `tests/test_mqtt.py`
-* Coverage ≥90% gate + demo PR - green run: `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26238512335`; demo PR (red-green): `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26238233494/job/77217327657`
-* htmlcov artifact uploaded - `evidence/htmlcov-artifact.png`
-* Accuracy gate + demo PR - demo PR: `<insert-url-here>`
+- Engine produced via real calibration - `best_int8.engine` in archive
+- INT8 mAP drop ≤ 2 pts - `calibration/accuracy_baseline.json` shows fp16=0.3197, int8=0.3183, Δ=0.0014
+- Comparison table + production recommendation - Optimization (INT8 vs FP16)above
 
-### Part B – Five-Stage Workflow Graph (15 pts)
-* 5 jobs with correct needs graph - `.github/workflows/ci.yml`
-* bandit & pip-audit both run - green security-scan job: `<insert-url-here>`
-* integration-test runs on jetson - `ci.yml` line N: `runs-on: [self-hosted, linux, arm64, jetson]`
-* Workflow runs green end-to-end on main - `<insert-url-here>`
+### Part A – Tests + Coverage + Accuracy Gates
 
-### Part C – Integration Test on Jetson (15 pts)
-* Test pulls per-commit image - `tests/integration/test_jetson_e2e.py`
-* `--runtime nvidia` + model-cache volume - same file, fixture `inference_container`
-* MQTT message within 30 s - same file, `test_inference_publishes_mqtt_within_window`
-* Cleanup on failure - same file, fixtures use `yield` + `try/finally`
-* Job runs green on main push - `<insert-url-here>`
+- 6+ tests in test_inference - `tests/test_inference.py`
+- 4+ tests in test_mqtt - `tests/test_mqtt.py`
+- Coverage ≥90% gate + demo PR - green run: `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26238512335`; demo PR (red-run): `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26238233494`
+- htmlcov artifact uploaded - `evidence/htmlcov-artifact.png`
+- Accuracy gate + demo PR - demo PR: `https://github.com/farhanhdaulay/edgeai-hw6/pull/21`
 
-### Part D – Tag-Triggered Deploy (20 pts)
-* `deploy.yml` triggers on v\*.\*.\* tags - `.github/workflows/deploy.yml`
-* production environment with required reviewer - screenshot: `evidence/production-env-settings.png`
-* Re-tags as v1.0.0/v1.0/v1/latest - green deploy run: `<insert-url-here>`
-* `deploy.sh`: pull -> compose up -> healthcheck -> rollback-on-fail - `deploy/deploy.sh` in archive
-* `healthcheck.sh`: 3 consecutive successes within 60 s - `deploy/healthcheck.sh` in archive
-* `deploy.sh` sets nvpmodel - screenshot of green deploy run: `evidence/deploy-log-nvpmodel.png`
-* `/healthz` reports power_mode from live nvpmodel -q - `evidence/healthz-curl.png`
+### Part B – Five-Stage Workflow Graph
 
-### Part E – Rollback Under 30 s (5 pts)
-* `rollback.sh` runs end-to-end <30 s - recording: `evidence/rollback-demo.txt`
-* State file maintains current + previous tag - recording shows `cat /var/lib/edgeai-hw6/deployed.txt` before/after
-* Rollback procedure - README §"Operations" "How to roll back" above
+- 5 jobs with correct needs graph - `.github/workflows/ci.yml`
+- bandit & pip-audit both run - green security-scan job: `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26236653495/job/77211645078`
+- integration-test runs on jetson - `ci.yml` line N: `runs-on: [self-hosted, linux, arm64, jetson]`
+- Workflow runs green end-to-end on main - `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26236653495`
 
-### Part F – Documentation & Fleet-Readiness (15 pts)
-* All sections present in this README.
+### Part C – Integration Test on Jetson
 
-### Code Quality (5 pts)
-* Headers, ruff clean, secrets-free - confirmed by green lint + security-scan jobs above
+- Test pulls per-commit image - `tests/integration/test_jetson_e2e.py`
+- `--runtime nvidia` + model-cache volume - same file, fixture `inference_container`
+- MQTT message within 30 s - same file, `test_inference_publishes_mqtt_within_window`
+- Cleanup on failure - same file, fixtures use `yield` + `try/finally`
+- Job runs green on main push - `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26290623369`
+
+### Part D – Tag-Triggered Deploy
+
+- `deploy.yml` triggers on v\*.\*.\* tags - `.github/workflows/deploy.yml`
+- production environment with required reviewer - screenshot: `evidence/production-env-settings.png`
+- Re-tags as v1.0.0/v1.0/v1/latest - green deploy run: `https://github.com/farhanhdaulay/edgeai-hw6/actions/runs/26323266027`
+- `deploy.sh`: pull -> compose up -> healthcheck -> rollback-on-fail - `deploy/deploy.sh` in archive
+- `healthcheck.sh`: 3 consecutive successes within 60 s - `deploy/healthcheck.sh` in archive
+- `deploy.sh` sets nvpmodel - screenshot of green deploy run: `evidence/deploy-log-nvpmodel.png`
+- `/healthz` reports power_mode from live nvpmodel -q - `evidence/healthz-curl.png`
+
+### Part E – Rollback Under 30 s
+
+- `rollback.sh` runs end-to-end <30 s - recording: `evidence/rollback-demo.txt`
+- State file maintains current + previous tag - recording shows `cat /var/lib/edgeai-hw6/deployed.txt` before/after
+- Rollback procedure - README "Operations" "How to roll back" above
+
+### Part F – Documentation & Fleet-Readiness
+
+- All sections present in this README.
+
+### Code Quality
+
+- Headers, ruff clean, secrets-free - confirmed by green lint + security-scan jobs above

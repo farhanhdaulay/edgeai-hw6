@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Farhan Hikmatullah Daulay
+# Tatung University — I4210 AI實務專題
 # deploy/docker-compose.yml
 services:
   inference:

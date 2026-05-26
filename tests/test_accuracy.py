@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 Kishore and Farhan
+# Copyright (c) 2026 Farhan Hikmatullah Daulay - 611451003
 # Tatung University 14210 AI實務專題
 """tests/test_accuracy.py - INT8-vs-FP16 accuracy regression gate."""
 
